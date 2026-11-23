@@ -40,7 +40,9 @@ function App() {
   useEffect(() => {
     let active = true
 
-    fetch('/api/games')
+    fetch(`/api/games?refresh=${Date.now()}`, {
+  cache: 'no-store',
+})
       .then(async response => {
         const data = await response.json()
 
