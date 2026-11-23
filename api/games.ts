@@ -35,37 +35,61 @@ function collectGames(value: any, result = new Map<number, any>()) {
   return result
 }
 
-function normalizeGenre(value: any, name = '', description = '') {
+function normalizeGenres(value: any, name = '', description = '') {
   const genre = String(value ?? '').toLowerCase()
   const text = `${name} ${description}`.toLowerCase()
 
+  const genres: string[] = []
+
+  const matches = (pattern: RegExp) => pattern.test(text)
+
   if (
     genre.includes('horror') ||
-    /\b(horror|scary|terror|haunted|nightmare)\b/.test(text)
-  ) return 'Horror'
+    matches(/\b(horror|scary|terror|haunted|nightmare|creepy|survive the night)\b/)
+  ) genres.push('Horror')
 
   if (
     genre.includes('simulat') ||
-    /\b(simulator|tycoon|pet sim|farming|restaurant|business sim)\b/.test(text)
-  ) return 'Simulator'
+    matches(/\b(simulator|tycoon|pet sim|farming|restaurant|business sim|build a business)\b/)
+  ) genres.push('Simulator')
 
   if (
     genre.includes('fight') ||
     genre.includes('action') ||
-    /\b(fighting|battle|combat|pvp|war|shooter|fps|arena)\b/.test(text)
-  ) return 'Fighting'
+    matches(/\b(fighting|battle|combat|pvp|war|shooter|fps|arena|boxing|sword fight)\b/)
+  ) genres.push('Fighting')
 
   if (
     genre.includes('roleplay') ||
-    /\b(roleplay|role play|rp|brookhaven|adopt me|bloxburg)\b/.test(text)
-  ) return 'Roleplay'
+    matches(/\b(roleplay|role play|brookhaven|adopt me|bloxburg|life in|live in)\b/)
+  ) genres.push('Roleplay')
 
   if (
     genre.includes('obby') ||
-    /\b(obby|parkour|tower of hell)\b/.test(text)
-  ) return 'Obby'
+    matches(/\b(obby|parkour|tower of hell|escape the)\b/)
+  ) genres.push('Obby')
 
-  return 'Other'
+  if (
+    matches(/\b(survival|survive|zombie|apocalypse|disaster|last alive|last to survive)\b/)
+  ) genres.push('Survival')
+
+  if (
+    matches(/\b(anime|naruto|one piece|dragon ball|bleach|jujutsu|demon slayer)\b/)
+  ) genres.push('Anime')
+
+  if (
+    matches(/\b(racing|race|driving|car simulator|drift|speedway)\b/)
+  ) genres.push('Racing')
+
+  if (
+    matches(/\b(sports|football|soccer|basketball|volleyball|tennis)\b/)
+  ) genres.push('Sports')
+
+  if (
+    matches(/\b(adventure|quest|explore|dungeon|open world)\b/)
+  ) genres.push('Adventure')
+
+  return genres.length > 0 ? [...new Set(genres)] : ['Other']
 }
 
 export default async function handler(req: any, res: any) {
@@ -149,7 +173,7 @@ export default async function handler(req: any, res: any) {
         id: game.id,
         name: game.name,
         description: game.description,
-        genre: normalizeGenre(
+        genres: normalizeGenres(
           discoveryInfo?.genreL1 ??
           discoveryInfo?.genre ??
           game.genre,
