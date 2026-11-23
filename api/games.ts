@@ -1,5 +1,6 @@
 
 const BASE = 'https://apis.roblox.com/explore-api/v1'
+const SEARCH_API = 'https://apis.roblox.com/search-api/omni-search'
 const GAME_API = 'https://games.roblox.com/v1'
 const THUMBNAIL_API = 'https://thumbnails.roblox.com/v1'
 
@@ -38,39 +39,38 @@ function collectGames(value: any, result = new Map<number, any>()) {
 function normalizeGenres(value: any, name = '', description = '') {
   const genre = String(value ?? '').toLowerCase()
   const text = `${name} ${description}`.toLowerCase()
-
   const genres: string[] = []
 
   const matches = (pattern: RegExp) => pattern.test(text)
 
   if (
     genre.includes('horror') ||
-    matches(/\b(horror|scary|terror|haunted|nightmare|creepy|survive the night)\b/)
+    matches(/\b(horror|scary|terror|haunted|nightmare|creepy)\b/)
   ) genres.push('Horror')
 
   if (
     genre.includes('simulat') ||
-    matches(/\b(simulator|tycoon|pet sim|farming|restaurant|business sim|build a business)\b/)
+    matches(/\b(simulator|tycoon|pet sim|farming|restaurant|business sim)\b/)
   ) genres.push('Simulator')
 
   if (
     genre.includes('fight') ||
     genre.includes('action') ||
-    matches(/\b(fighting|battle|combat|pvp|war|shooter|fps|arena|boxing|sword fight)\b/)
+    matches(/\b(fighting|battle|combat|pvp|war|shooter|fps|arena|boxing)\b/)
   ) genres.push('Fighting')
 
   if (
     genre.includes('roleplay') ||
-    matches(/\b(roleplay|role play|brookhaven|adopt me|bloxburg|life in|live in)\b/)
+    matches(/\b(roleplay|role play|brookhaven|adopt me|bloxburg)\b/)
   ) genres.push('Roleplay')
 
   if (
     genre.includes('obby') ||
-    matches(/\b(obby|parkour|tower of hell|escape the)\b/)
+    matches(/\b(obby|parkour|tower of hell)\b/)
   ) genres.push('Obby')
 
   if (
-    matches(/\b(survival|survive|zombie|apocalypse|disaster|last alive|last to survive)\b/)
+    matches(/\b(survival|survive|zombie|apocalypse|disaster|last alive)\b/)
   ) genres.push('Survival')
 
   if (
@@ -99,7 +99,9 @@ export default async function handler(req: any, res: any) {
 
   try {
     const sessionId = 'rblx-finder-session'
+    const discovered = new Map<number, any>()
 
+    // 1. Roblox Discover categories
     const sortsData = await getJson(
       `${BASE}/get-sorts?sessionId=${sessionId}&device=computer&country=all`
     )
@@ -116,12 +118,6 @@ export default async function handler(req: any, res: any) {
       ))
       .filter(Boolean)
 
-    if (!selectedSorts.length) {
-      throw new Error('No Roblox discovery categories found')
-    }
-
-    const discovered = new Map<number, any>()
-
     for (const sort of selectedSorts) {
       const sortId = sort.sortId || sort.token
 
@@ -132,12 +128,48 @@ export default async function handler(req: any, res: any) {
       collectGames(content, discovered)
     }
 
-    const ids = [...discovered.keys()].slice(0, 150)
+    // 2. Search for more Roblox games
+    const searchTerms = [
+      'The Mimic',
+      'Doors',
+      'Pressure',
+      'Apeirophobia',
+      'horror',
+      'survival',
+      'anime',
+      'simulator',
+      'roleplay',
+      'obby',
+      'racing',
+      'adventure',
+    ]
+
+    for (const term of searchTerms) {
+      try {
+        const params = new URLSearchParams({
+          searchQuery: term,
+          sessionId,
+          pageType: 'all',
+        })
+
+        const searchData = await getJson(
+          `${SEARCH_API}/omni-search?${params.toString()}`
+        )
+
+        collectGames(searchData, discovered)
+      } catch (error) {
+        console.error(`Search failed for ${term}:`, error)
+      }
+    }
+
+    // 3. Collect discovered game IDs
+    const ids = [...discovered.keys()].slice(0, 300)
 
     if (!ids.length) {
       throw new Error('Roblox did not return any games')
     }
 
+    // 4. Load game details
     const details: any[] = []
 
     for (let i = 0; i < ids.length; i += 50) {
@@ -150,6 +182,7 @@ export default async function handler(req: any, res: any) {
       details.push(...(data.data ?? []))
     }
 
+    // 5. Load game icons
     const iconData: any[] = []
 
     for (let i = 0; i < ids.length; i += 50) {
@@ -166,6 +199,7 @@ export default async function handler(req: any, res: any) {
       iconData.map((item: any) => [item.targetId, item.imageUrl])
     )
 
+    // 6. Prepare final game list
     const games = details.map((game: any) => {
       const discoveryInfo = discovered.get(game.id)
 
@@ -192,7 +226,7 @@ export default async function handler(req: any, res: any) {
 
     res.setHeader(
       'Cache-Control',
-      's-maxage=60, stale-while-revalidate=300'
+      's-maxage=300, stale-while-revalidate=600'
     )
 
     return res.status(200).json({ games })
