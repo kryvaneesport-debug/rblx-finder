@@ -28,6 +28,16 @@ const categories = [
   { name: 'Other', icon: '🎲' },
 ]
 
+const officialNames: Record<number, string> = {
+  2440500124: 'Doors',
+  1516533665: 'Piggy',
+  2294168059: 'The Mimic',
+  3761186887: 'Apeirophobia',
+  994732206: 'Blox Fruits',
+  6035872082: 'RIVALS',
+  3085257211: 'Rainbow Friends',
+}
+
 function App() {
   const [games, setGames] = useState<Game[]>([])
   const [category, setCategory] = useState('All Games')
@@ -35,62 +45,106 @@ function App() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [errorDetails, setErrorDetails] = useState('')
   const [totalGames, setTotalGames] = useState(0)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let active = true
 
-    fetch(`/api/games?refresh=${Date.now()}`, {
-  cache: 'no-store',
-})
-      .then(async response => {
-        const data = await response.json()
+    async function loadGames() {
+      setLoading(true)
+      setError('')
+      setErrorDetails('')
 
-        if (!response.ok) {
-          throw new Error(
-            data.details || data.error || 'Failed to load games.'
+      let lastError = 'Unknown error'
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const response = await fetch(
+            `/api/games?refresh=${Date.now()}-${attempt}`,
+            {
+              method: 'GET',
+              cache: 'no-store',
+              headers: {
+                Accept: 'application/json',
+              },
+            }
           )
+
+          const data = await response.json()
+
+          if (!response.ok) {
+            throw new Error(
+              data.details ||
+              data.error ||
+              `Server returned HTTP ${response.status}`
+            )
+          }
+
+          if (!Array.isArray(data.games)) {
+            throw new Error('The API returned an invalid games list.')
+          }
+
+          const validGames: Game[] = data.games
+            .filter((game: any) =>
+              Number.isSafeInteger(Number(game.id)) &&
+              Number(game.id) > 0 &&
+              typeof game.name === 'string' &&
+              game.name.trim().length > 0
+            )
+            .map((game: any) => {
+              const id = Number(game.id)
+
+              return {
+                id,
+                name: officialNames[id] || game.name,
+                description: String(game.description || ''),
+                genres: Array.isArray(game.genres)
+                  ? game.genres
+                  : ['Other'],
+                players: Math.max(0, Number(game.players) || 0),
+                visits: Math.max(0, Number(game.visits) || 0),
+                maxPlayers: Math.max(0, Number(game.maxPlayers) || 0),
+                icon: typeof game.icon === 'string' ? game.icon : null,
+                url: typeof game.url === 'string'
+                  ? game.url
+                  : `https://www.roblox.com/discover/?Keyword=${encodeURIComponent(game.name)}`,
+              }
+            })
+
+          if (!active) return
+
+          setGames(validGames)
+          setTotalGames(Number(data.total) || validGames.length)
+          setLoading(false)
+          return
+        } catch (err) {
+          lastError = err instanceof Error
+            ? err.message
+            : String(err)
+
+          console.error(`RBLX FINDER attempt ${attempt}:`, err)
+
+          if (attempt < 3) {
+            await new Promise(resolve => setTimeout(resolve, 1500))
+          }
         }
+      }
 
-        return data
-      })
-      .then(data => {
-        if (!active) return
+      if (!active) return
 
-        const validGames = (Array.isArray(data.games) ? data.games : [])
-          .filter((game: any) =>
-            Number.isSafeInteger(Number(game.id)) &&
-            Number(game.id) > 0 &&
-            typeof game.name === 'string' &&
-            game.name.trim().length > 0
-          )
-          .map((game: any) => ({
-            ...game,
-            id: Number(game.id),
-            players: Number(game.players) || 0,
-            visits: Number(game.visits) || 0,
-            genres: Array.isArray(game.genres) ? game.genres : ['Other'],
-          }))
+      setError('Could not load Roblox games.')
+      setErrorDetails(lastError)
+      setLoading(false)
+    }
 
-        setGames(validGames)
-        setTotalGames(Number(data.total) || validGames.length)
-      })
-      .catch(error => {
-        if (!active) return
-
-        console.error('RBLX FINDER:', error)
-        setError(
-          'Could not load Roblox games. Please try again later.'
-        )
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
+    loadGames()
 
     return () => {
       active = false
     }
-  }, [])
+  }, [reloadKey])
 
   const filteredGames = useMemo(() => {
     return games
@@ -107,6 +161,10 @@ function App() {
           : b.visits - a.visits
       )
   }, [games, category, search, sort])
+
+  function retryLoading() {
+    setReloadKey(value => value + 1)
+  }
 
   return (
     <div className="app">
@@ -138,7 +196,11 @@ function App() {
 
         <section className="hero">
           <div className="hero-tag">YOUR NEXT ADVENTURE STARTS HERE</div>
-          <h1>Find your next<br /><span>favorite game.</span></h1>
+          <h1>
+            Find your next<br />
+            <span>favorite game.</span>
+          </h1>
+
           <p>
             Explore Roblox games, discover new experiences and find what's popular.
           </p>
@@ -147,7 +209,7 @@ function App() {
             <span>⌕</span>
             <input
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={event => setSearch(event.target.value)}
               placeholder="Search Roblox games..."
             />
             <kbd>SEARCH</kbd>
@@ -158,11 +220,13 @@ function App() {
           <div className="section-heading">
             <div>
               <div className="hero-tag">EXPLORE THE UNIVERSE</div>
+
               <h2>
                 {category === 'All Games'
                   ? 'Discover games'
                   : `${category} games`}
               </h2>
+
               <p>
                 {loading
                   ? 'Loading games...'
@@ -175,7 +239,7 @@ function App() {
               <select
                 id="sort"
                 value={sort}
-                onChange={e => setSort(e.target.value)}
+                onChange={event => setSort(event.target.value)}
               >
                 <option value="players">Most players</option>
                 <option value="visits">Most visits</option>
@@ -184,11 +248,27 @@ function App() {
           </div>
 
           {loading && (
-            <div className="empty">Loading Roblox games...</div>
+            <div className="empty">
+              Loading Roblox games...
+            </div>
           )}
 
-          {error && (
-            <div className="empty">{error}</div>
+          {!loading && error && (
+            <div className="empty">
+              <h3>{error}</h3>
+              <p>{errorDetails}</p>
+              <button
+                className="nav-item active"
+                onClick={retryLoading}
+                style={{
+                  display: 'inline-flex',
+                  width: 'auto',
+                  marginTop: '15px',
+                }}
+              >
+                Try Again
+              </button>
+            </div>
           )}
 
           {!loading && !error && (
