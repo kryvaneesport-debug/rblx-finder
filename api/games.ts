@@ -3,54 +3,65 @@ const SEARCH_API = 'https://apis.roblox.com/search-api/omni-search'
 const GAME_API = 'https://games.roblox.com/v1'
 const THUMBNAIL_API = 'https://thumbnails.roblox.com/v1'
 
-const MAX_GAMES = 100
-const SEARCH_CONCURRENCY = 5
-const REQUEST_TIMEOUT = 7000
+const MAX_GAMES = 250
+const SEARCH_CONCURRENCY = 10
+const REQUEST_TIMEOUT = 5000
 
 const SEARCH_TERMS = [
-  'The Mimic',
-  'Piggy',
-  'Doors',
-  'Pressure',
-  'Apeirophobia',
-  'Evade',
-  'Rainbow Friends',
+  // Popular games
   'Blox Fruits',
   'Brookhaven',
-  'Rivals',
   'Adopt Me',
   'Grow a Garden',
-  'Murder Mystery 2',
-  'Natural Disaster Survival',
-  'Arsenal',
-  'Blade Ball',
-  'Jailbreak',
-  'Tower of Hell',
   'Dress to Impress',
+  'RIVALS',
+  'Murder Mystery 2',
+  'Doors',
+  'The Mimic',
+  'Piggy',
+  'Evade',
+  'Pressure',
+  'Apeirophobia',
+  'Rainbow Friends',
   'Fisch',
+  'Dandy World',
   'Pet Simulator 99',
-  '3008',
-  'Work at a Pizza Place',
-  'MeepCity',
+  'Blade Ball',
+  'Arsenal',
+  'Jailbreak',
+  'BedWars',
   'Royale High',
-  'Dandy’s World',
+  'Tower of Hell',
+  'Natural Disaster Survival',
+  '3008',
   'Flee the Facility',
-  'Breaking Point',
-  'Survive the Killer',
-  'The Strongest Battlegrounds',
   'Shindo Life',
   'King Legacy',
   'Anime Adventures',
-  'BedWars',
-  'Islands',
-  'Build a Boat for Treasure',
   'Bee Swarm Simulator',
-  'Vehicle Legends',
-  'Epic Minigames',
-  'Flood Escape 2',
-]
 
-const KNOWN_GAME_NAMES = SEARCH_TERMS.map(normalizeName)
+  // Discover by genre
+  'Roblox horror games',
+  'Roblox survival games',
+  'Roblox simulator games',
+  'Roblox tycoon games',
+  'Roblox roleplay games',
+  'Roblox anime games',
+  'Roblox fighting games',
+  'Roblox adventure games',
+  'Roblox obby games',
+  'Roblox racing games',
+  'Roblox funny games',
+  'Roblox story games',
+  'Roblox military games',
+  'Roblox football games',
+  'Roblox building games',
+  'Roblox open world games',
+  'Roblox escape games',
+  'Roblox zombie games',
+  'Roblox parkour games',
+  'Roblox mystery games',
+]
 
 function normalizeName(name: string) {
   return String(name ?? '')
@@ -60,10 +71,6 @@ function normalizeName(name: string) {
     .replace(/[’']/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
-}
-
-function isKnownGame(name: string) {
-  return KNOWN_GAME_NAMES.includes(normalizeName(name))
 }
 
 function delay(ms: number) {
@@ -103,7 +110,7 @@ async function getJson(url: string, retries = 1): Promise<any> {
         : new Error(String(error))
 
       if (attempt < retries) {
-        await delay(500)
+        await delay(300)
       }
     } finally {
       clearTimeout(timeout)
@@ -131,10 +138,14 @@ function collectGames(
 
   const id = Number(value.universeId)
 
-  if (Number.isSafeInteger(id) && id > 0) {
+  if (
+    Number.isSafeInteger(id) &&
+    id > 0
+  ) {
     result.set(id, {
       ...result.get(id),
       ...value,
+      universeId: id,
     })
   }
 
@@ -154,12 +165,12 @@ function getGenre(name: string, genre = '') {
 
   if (
     sourceGenre.includes('horror') ||
-    /\b(piggy|mimic|doors|pressure|evade|apeirophobia|rainbow friends)\b/.test(text)
+    /\b(piggy|mimic|doors|pressure|evade|apeirophobia|rainbow friends|dandy world)\b/.test(text)
   ) genres.push('Horror')
 
   if (
     sourceGenre.includes('simulat') ||
-    /\b(simulator|tycoon|farming|bee swarm|grow a garden|pet simulator)\b/.test(text)
+    /\b(simulator|tycoon|farming|bee swarm|grow a garden|pet simulator|fisch)\b/.test(text)
   ) genres.push('Simulator')
 
   if (
@@ -172,7 +183,7 @@ function getGenre(name: string, genre = '') {
   ) genres.push('Roleplay')
 
   if (
-    /\b(obby|parkour|tower of hell)\b/.test(text)
+    /\b(obby|parkour|tower of hell|escape)\b/.test(text)
   ) genres.push('Obby')
 
   if (
@@ -184,7 +195,7 @@ function getGenre(name: string, genre = '') {
   ) genres.push('Anime')
 
   if (
-    /\b(racing|race|driving|drift|vehicle legends)\b/.test(text)
+    /\b(racing|race|driving|drift|vehicle|car)\b/.test(text)
   ) genres.push('Racing')
 
   if (
@@ -192,10 +203,12 @@ function getGenre(name: string, genre = '') {
   ) genres.push('Sports')
 
   if (
-    /\b(adventure|quest|explore|dungeon|open world)\b/.test(text)
+    /\b(adventure|quest|explore|dungeon|open world|story)\b/.test(text)
   ) genres.push('Adventure')
 
-  return genres.length ? [...new Set(genres)] : ['Other']
+  return genres.length
+    ? [...new Set(genres)]
+    : ['Other']
 }
 
 async function searchRoblox(term: string) {
@@ -211,60 +224,60 @@ async function searchRoblox(term: string) {
       0
     )
 
-    const candidates = collectGames(data)
-    const results: any[] = []
+    return [...collectGames(data).values()]
+      .filter(game => {
+        const name = String(
+          game.name ?? game.universeName ?? ''
+        )
 
-    for (const [id, game] of candidates) {
-      const name = String(
-        game.name ?? game.universeName ?? ''
-      )
-
-      // Přijímáme pouze originální název hry.
-      if (!isKnownGame(name)) {
-        continue
-      }
-
-      if (normalizeName(name) !== normalizeName(term)) {
-        continue
-      }
-
-      results.push({
-        ...game,
-        universeId: id,
+        return (
+          name.trim().length > 0 &&
+          Number(game.universeId) > 0
+        )
       })
-    }
-
-    return results
   } catch (error) {
-    console.error(`Search failed for ${term}:`, error)
+    console.error(`Search failed for "${term}":`, error)
     return []
   }
+}
+
+async function runInBatches<T, R>(
+  items: T[],
+  concurrency: number,
+  callback: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = []
+
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency)
+
+    const batchResults = await Promise.all(
+      batch.map(callback)
+    )
+
+    results.push(...batchResults)
+  }
+
+  return results
 }
 
 async function loadSearches() {
   const discovered = new Map<number, any>()
 
-  for (
-    let i = 0;
-    i < SEARCH_TERMS.length;
-    i += SEARCH_CONCURRENCY
-  ) {
-    const batch = SEARCH_TERMS.slice(
-      i,
-      i + SEARCH_CONCURRENCY
-    )
+  const results = await runInBatches(
+    SEARCH_TERMS,
+    SEARCH_CONCURRENCY,
+    searchRoblox
+  )
 
-    const results = await Promise.all(
-      batch.map(term => searchRoblox(term))
-    )
+  for (const games of results) {
+    for (const game of games) {
+      const id = Number(game.universeId)
 
-    for (const games of results) {
-      for (const game of games) {
-        discovered.set(game.universeId, {
-          ...discovered.get(game.universeId),
-          ...game,
-        })
-      }
+      discovered.set(id, {
+        ...discovered.get(id),
+        ...game,
+      })
     }
   }
 
@@ -279,7 +292,9 @@ function formatGame(game: any, icon: string | null = null) {
   )
 
   const rootPlaceId = Number(
-    game.rootPlaceId ?? game.placeId ?? game.rootPlace?.id
+    game.rootPlaceId ??
+    game.placeId ??
+    game.rootPlace?.id
   )
 
   const players = Number(
@@ -322,98 +337,120 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    // 1. Vyhledáme celý seznam známých her.
+    // 1. Discover games through Roblox search.
     const discovered = await loadSearches()
 
     if (discovered.size === 0) {
       throw new Error(
-        'Roblox search returned no known games.'
+        'Roblox search returned no games.'
       )
     }
 
-    const candidates = [...discovered.values()].slice(
-      0,
-      MAX_GAMES
-    )
+    const candidates = [...discovered.values()]
+      .slice(0, MAX_GAMES)
 
     const ids = candidates
       .map(game => Number(game.universeId))
-      .filter(id => Number.isSafeInteger(id) && id > 0)
+      .filter(id =>
+        Number.isSafeInteger(id) && id > 0
+      )
 
-    // 2. Načteme statistiky.
-    const details: any[] = []
+    // 2. Load game statistics in batches.
+    const detailBatches: number[][] = []
 
     for (let i = 0; i < ids.length; i += 50) {
-      const batch = ids.slice(i, i + 50)
+      detailBatches.push(ids.slice(i, i + 50))
+    }
 
-      try {
-        const data = await getJson(
-          `${GAME_API}/games?universeIds=${batch.join(',')}`,
-          0
-        )
+    const detailResults = await Promise.all(
+      detailBatches.map(async batch => {
+        try {
+          const data = await getJson(
+            `${GAME_API}/games?universeIds=${batch.join(',')}`,
+            0
+          )
 
-        details.push(...(data.data ?? []))
-      } catch (error) {
-        console.error('Game details unavailable:', error)
-        break
+          return data.data ?? []
+        } catch (error) {
+          console.error('Game details unavailable:', error)
+          return []
+        }
+      })
+    )
+
+    const detailMap = new Map<number, any>()
+
+    for (const batch of detailResults) {
+      for (const game of batch) {
+        detailMap.set(Number(game.id), game)
       }
     }
 
-    // 3. Spojíme výsledky vyhledávání a statistiky.
-    const detailMap = new Map<number, any>()
-
-    for (const game of details) {
-      detailMap.set(Number(game.id), game)
-    }
-
+    // 3. Merge search results and game statistics.
     const mergedGames = candidates.map(candidate => ({
       ...candidate,
       ...(detailMap.get(Number(candidate.universeId)) ?? {}),
     }))
 
-    // 4. Načteme obrázky.
-    const iconMap = new Map<number, string>()
+    // 4. Load game icons.
+    const iconBatches: number[][] = []
 
     for (let i = 0; i < ids.length; i += 50) {
-      const batch = ids.slice(i, i + 50)
+      iconBatches.push(ids.slice(i, i + 50))
+    }
 
-      try {
-        const data = await getJson(
-          `${THUMBNAIL_API}/games/icons?universeIds=${batch.join(',')}&size=512x512&format=Png&isCircular=false`,
-          0
-        )
+    const iconResults = await Promise.all(
+      iconBatches.map(async batch => {
+        try {
+          const data = await getJson(
+            `${THUMBNAIL_API}/games/icons?universeIds=${batch.join(',')}&size=512x512&format=Png&isCircular=false`,
+            0
+          )
 
-        for (const item of data.data ?? []) {
-          if (item.targetId && item.imageUrl) {
-            iconMap.set(
-              Number(item.targetId),
-              item.imageUrl
-            )
-          }
+          return data.data ?? []
+        } catch (error) {
+          console.error('Thumbnails unavailable:', error)
+          return []
         }
-      } catch (error) {
-        console.error('Thumbnails unavailable:', error)
+      })
+    )
+
+    const iconMap = new Map<number, string>()
+
+    for (const batch of iconResults) {
+      for (const item of batch) {
+        if (item.targetId && item.imageUrl) {
+          iconMap.set(
+            Number(item.targetId),
+            item.imageUrl
+          )
+        }
       }
     }
 
-    // 5. Odstraníme kopie a seřadíme hry.
-    const games = mergedGames
-      .filter(game => {
-        const name = String(
-          game.name ?? game.universeName ?? ''
-        )
+    // 5. Format, remove duplicates and sort.
+    const uniqueGames = new Map<number, any>()
 
-        return isKnownGame(name)
-      })
-      .map(game => {
-        const id = Number(game.id ?? game.universeId)
+    for (const game of mergedGames) {
+      const id = Number(game.id ?? game.universeId)
 
-        return formatGame(
-          game,
-          iconMap.get(id) ?? null
-        )
-      })
-      .filter(game => game.id > 0)
+      if (!Number.isSafeInteger(id) || id <= 0) {
+        continue
+      }
+
+      const formatted = formatGame(
+        game,
+        iconMap.get(id) ?? null
+      )
+
+      if (!formatted.name.trim()) {
+        continue
+      }
+
+      uniqueGames.set(id, formatted)
+    }
+
+    const games = [...uniqueGames.values()]
       .sort((a, b) => b.players - a.players)
 
     res.setHeader(
