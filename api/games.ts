@@ -35,14 +35,35 @@ function collectGames(value: any, result = new Map<number, any>()) {
   return result
 }
 
-function normalizeGenre(value: any) {
+function normalizeGenre(value: any, name = '', description = '') {
   const genre = String(value ?? '').toLowerCase()
+  const text = `${name} ${description}`.toLowerCase()
 
-  if (genre.includes('horror')) return 'Horror'
-  if (genre.includes('simulat')) return 'Simulator'
-  if (genre.includes('fight') || genre.includes('action')) return 'Fighting'
-  if (genre.includes('roleplay') || genre.includes('role play')) return 'Roleplay'
-  if (genre.includes('obby')) return 'Obby'
+  if (
+    genre.includes('horror') ||
+    /\b(horror|scary|terror|haunted|nightmare)\b/.test(text)
+  ) return 'Horror'
+
+  if (
+    genre.includes('simulat') ||
+    /\b(simulator|tycoon|pet sim|farming|restaurant|business sim)\b/.test(text)
+  ) return 'Simulator'
+
+  if (
+    genre.includes('fight') ||
+    genre.includes('action') ||
+    /\b(fighting|battle|combat|pvp|war|shooter|fps|arena)\b/.test(text)
+  ) return 'Fighting'
+
+  if (
+    genre.includes('roleplay') ||
+    /\b(roleplay|role play|rp|brookhaven|adopt me|bloxburg)\b/.test(text)
+  ) return 'Roleplay'
+
+  if (
+    genre.includes('obby') ||
+    /\b(obby|parkour|tower of hell)\b/.test(text)
+  ) return 'Obby'
 
   return 'Other'
 }
@@ -66,7 +87,9 @@ export default async function handler(req: any, res: any) {
     const wanted = ['top-playing-now', 'top-trending', 'up-and-coming']
 
     const selectedSorts = wanted
-      .map(id => sorts.find((sort: any) => sort.sortId === id || sort.token === id))
+      .map(id => sorts.find((sort: any) =>
+        sort.sortId === id || sort.token === id
+      ))
       .filter(Boolean)
 
     if (!selectedSorts.length) {
@@ -129,7 +152,9 @@ export default async function handler(req: any, res: any) {
         genre: normalizeGenre(
           discoveryInfo?.genreL1 ??
           discoveryInfo?.genre ??
-          game.genre
+          game.genre,
+          game.name,
+          game.description
         ),
         players: game.playing ?? 0,
         visits: game.visits ?? 0,
