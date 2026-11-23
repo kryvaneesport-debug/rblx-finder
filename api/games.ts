@@ -1,70 +1,20 @@
 
-const BASE = 'https://apis.roblox.com/explore-api/v1'
-const SEARCH_API = 'https://apis.roblox.com/search-api/omni-search'
 const GAME_API = 'https://games.roblox.com/v1'
+const SEARCH_API = 'https://apis.roblox.com/search-api/omni-search'
 const THUMBNAIL_API = 'https://thumbnails.roblox.com/v1'
 
-const MAX_GAMES = 500
+const MAX_GAMES = 250
 const MIN_PLAYERS = 500
+const SEARCH_CONCURRENCY = 4
 
+// Tyto hry přidáváme přímo podle jejich ověřených Universe ID.
 const FEATURED_GAMES = new Map<number, string>([
   [2294168059, 'Horror'], // The Mimic
+  [1516533665, 'Horror'], // Piggy
 ])
 
-const KNOWN_GAME_NAMES = [
-  'the mimic',
-  'doors',
-  'pressure',
-  'apeirophobia',
-  'piggy',
-  'evade',
-  'rainbow friends',
-  'blox fruits',
-  'brookhaven',
-  'rivals',
-  'adopt me',
-  'grow a garden',
-  'murder mystery 2',
-  'natural disaster survival',
-  'arsenal',
-  'blade ball',
-  'jailbreak',
-  'tower of hell',
-  'dress to impress',
-  'fisch',
-  'pet simulator',
-  'pet simulator 99',
-  '3008',
-  'work at a pizza place',
-  'meepcity',
-  'royale high',
-  'dandy world',
-  'untitled tag game',
-  'flee the facility',
-  'breaking point',
-  'survive the killer',
-  'rainbow friends 2',
-  'the strongest battlegrounds',
-  'shindo life',
-  'king legacy',
-  'anime adventures',
-  'anime defenders',
-  'bedwars',
-  'islands',
-  'build a boat for treasure',
-  'bee swarm simulator',
-  'pet catchers',
-  'vehicle legends',
-  'emergency response',
-  'livtopia',
-  'twilight daycare',
-  'super bomb survival',
-  'epic minigames',
-  'flood escape 2',
-]
-
+// Hledáme konkrétní hry, nikoliv obecné výrazy typu "horror games".
 const SEARCH_TERMS = [
-  'The Mimic',
   'Doors',
   'Pressure',
   'Apeirophobia',
@@ -90,6 +40,7 @@ const SEARCH_TERMS = [
   'MeepCity',
   'Royale High',
   'Dandy’s World',
+  'Flee the Facility',
   'Breaking Point',
   'Survive the Killer',
   'The Strongest Battlegrounds',
@@ -103,30 +54,153 @@ const SEARCH_TERMS = [
   'Vehicle Legends',
   'Epic Minigames',
   'Flood Escape 2',
-  'horror games',
-  'survival games',
-  'anime games',
-  'simulator games',
-  'roleplay games',
-  'obby games',
-  'racing games',
-  'adventure games',
-  'fighting games',
-  'popular Roblox games',
 ]
 
-async function getJson(url: string) {
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 RBLX-FINDER',
-    },
-  })
+const KNOWN_GAME_NAMES = [
+  'the mimic',
+  'piggy',
+  'doors',
+  'pressure',
+  'apeirophobia',
+  'evade',
+  'rainbow friends',
+  'blox fruits',
+  'brookhaven',
+  'rivals',
+  'adopt me',
+  'grow a garden',
+  'murder mystery 2',
+  'natural disaster survival',
+  'arsenal',
+  'blade ball',
+  'jailbreak',
+  'tower of hell',
+  'dress to impress',
+  'fisch',
+  'pet simulator',
+  'pet simulator 99',
+  '3008',
+  'work at a pizza place',
+  'meepcity',
+  'royale high',
+  'dandy world',
+  'flee the facility',
+  'breaking point',
+  'survive the killer',
+  'the strongest battlegrounds',
+  'shindo life',
+  'king legacy',
+  'anime adventures',
+  'bedwars',
+  'islands',
+  'build a boat for treasure',
+  'bee swarm simulator',
+  'vehicle legends',
+  'epic minigames',
+  'flood escape 2',
+]
 
-  if (!response.ok) {
-    throw new Error(`Roblox API error: ${response.status}`)
+function delay(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function getJson(url: string, retries = 2): Promise<any> {
+  let lastError: Error | null = null
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 RBLX-FINDER',
+          'Accept': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        const error = new Error(
+          `Roblox API ${response.status} (${new URL(url).pathname})`
+        )
+
+        lastError = error
+
+        const temporaryError =
+          response.status === 429 ||
+          response.status === 500 ||
+          response.status === 502 ||
+          response.status === 503 ||
+          response.status === 504
+
+        if (!temporaryError || attempt === retries) {
+          throw error
+        }
+
+        const retryAfter = Number(
+          response.headers.get('Retry-After')
+        )
+
+        const waitTime = Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(retryAfter * 1000, 5000)
+          : 400 * (attempt + 1)
+
+        await delay(waitTime)
+        continue
+      }
+
+      return await response.json()
+    } catch (error) {
+      lastError = error instanceof Error
+        ? error
+        : new Error(String(error))
+
+      if (attempt === retries) {
+        throw lastError
+      }
+
+      await delay(400 * (attempt + 1))
+    }
   }
 
-  return response.json()
+  throw lastError ?? new Error('Unknown Roblox API error')
+}
+
+function normalizeName(name: string) {
+  return String(name ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function matchesSearchResult(name: string, term: string) {
+  const normalizedName = normalizeName(name)
+  const normalizedTerm = normalizeName(term)
+
+  if (!normalizedName || !normalizedTerm) {
+    return false
+  }
+
+  return (
+    normalizedName === normalizedTerm ||
+    normalizedName.startsWith(normalizedTerm + ' ') ||
+    normalizedName.endsWith(' ' + normalizedTerm) ||
+    normalizedName.includes(' ' + normalizedTerm + ' ')
+  )
+}
+
+function isKnownGame(name: string) {
+  const normalized = normalizeName(name)
+
+  return KNOWN_GAME_NAMES.some(known => {
+    const expected = normalizeName(known)
+
+    return (
+      normalized === expected ||
+      normalized.startsWith(expected + ' ') ||
+      normalized.endsWith(' ' + expected)
+    )
+  })
 }
 
 function collectGames(
@@ -166,85 +240,82 @@ function collectGames(
   return result
 }
 
-function normalizeName(name: string) {
-  return String(name ?? '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[’']/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-}
-
-function isKnownGame(name: string) {
-  const normalized = normalizeName(name)
-
-  return KNOWN_GAME_NAMES.some(known => {
-    const normalizedKnown = normalizeName(known)
-
-    return (
-      normalized === normalizedKnown ||
-      normalized.startsWith(normalizedKnown + ' ')
-    )
-  })
-}
-
 function normalizeGenres(
   value: any,
-  name = '',
-  description = ''
+  name = ''
 ) {
   const genre = String(value ?? '').toLowerCase()
-  const text = `${name} ${description}`.toLowerCase()
+  const text = normalizeName(name)
   const genres: string[] = []
 
   const matches = (pattern: RegExp) => pattern.test(text)
 
   if (
     genre.includes('horror') ||
-    matches(/\b(horror|scary|terror|haunted|nightmare|creepy|mimic|doors|pressure|apeirophobia|piggy|rainbow friends)\b/)
-  ) genres.push('Horror')
+    matches(/\b(horror|scary|mimic|doors|pressure|apeirophobia|piggy|rainbow friends)\b/)
+  ) {
+    genres.push('Horror')
+  }
 
   if (
     genre.includes('simulat') ||
-    matches(/\b(simulator|tycoon|pet sim|farming|restaurant|business sim|bee swarm|grow a garden)\b/)
-  ) genres.push('Simulator')
+    matches(/\b(simulator|tycoon|farming|bee swarm|grow a garden|pet simulator)\b/)
+  ) {
+    genres.push('Simulator')
+  }
 
   if (
     genre.includes('fight') ||
     genre.includes('action') ||
-    matches(/\b(fighting|battle|combat|pvp|war|shooter|fps|arena|boxing|rivals|arsenal|blade ball)\b/)
-  ) genres.push('Fighting')
+    matches(/\b(fighting|battle|combat|pvp|rivals|arsenal|blade ball)\b/)
+  ) {
+    genres.push('Fighting')
+  }
 
   if (
     genre.includes('roleplay') ||
-    matches(/\b(roleplay|role play|brookhaven|adopt me|bloxburg|meepcity|royale high)\b/)
-  ) genres.push('Roleplay')
+    matches(/\b(roleplay|brookhaven|adopt me|meepcity|royale high)\b/)
+  ) {
+    genres.push('Roleplay')
+  }
 
   if (
     genre.includes('obby') ||
     matches(/\b(obby|parkour|tower of hell)\b/)
-  ) genres.push('Obby')
+  ) {
+    genres.push('Obby')
+  }
 
   if (
-    matches(/\b(survival|survive|zombie|apocalypse|disaster|last alive|3008)\b/)
-  ) genres.push('Survival')
+    genre.includes('survival') ||
+    matches(/\b(survival|survive|zombie|disaster|3008)\b/)
+  ) {
+    genres.push('Survival')
+  }
 
   if (
     matches(/\b(anime|naruto|one piece|dragon ball|bleach|jujutsu|demon slayer|shindo life)\b/)
-  ) genres.push('Anime')
+  ) {
+    genres.push('Anime')
+  }
 
   if (
-    matches(/\b(racing|race|driving|car simulator|drift|speedway|vehicle legends)\b/)
-  ) genres.push('Racing')
+    matches(/\b(racing|race|driving|drift|vehicle legends)\b/)
+  ) {
+    genres.push('Racing')
+  }
 
   if (
     matches(/\b(sports|football|soccer|basketball|volleyball|tennis|bedwars)\b/)
-  ) genres.push('Sports')
+  ) {
+    genres.push('Sports')
+  }
 
   if (
     matches(/\b(adventure|quest|explore|dungeon|open world)\b/)
-  ) genres.push('Adventure')
+  ) {
+    genres.push('Adventure')
+  }
 
   return genres.length > 0
     ? [...new Set(genres)]
@@ -255,33 +326,55 @@ async function searchRoblox(
   term: string,
   discovered: Map<number, any>
 ) {
-  let pageToken = ''
+  const params = new URLSearchParams({
+    searchQuery: term,
+    sessionId: 'rblx-finder',
+    pageType: 'all',
+  })
 
-  for (let page = 0; page < 2; page++) {
-    const params = new URLSearchParams({
-      searchQuery: term,
-      sessionId: 'rblx-finder-session',
-      pageType: 'all',
-    })
+  try {
+    const data = await getJson(
+      `${SEARCH_API}?${params.toString()}`
+    )
 
-    if (pageToken) {
-      params.set('pageToken', pageToken)
-    }
+    const candidates = collectGames(data)
 
-    try {
-      const data = await getJson(
-        `${SEARCH_API}?${params.toString()}`
+    for (const [id, game] of candidates) {
+      const name = String(
+        game.name ?? game.universeName ?? ''
       )
 
-      collectGames(data, discovered)
+      // Přijímáme pouze skutečné shody s hledaným názvem.
+      if (!matchesSearchResult(name, term)) {
+        continue
+      }
 
-      pageToken = data.nextPageToken
-
-      if (!pageToken) break
-    } catch (error) {
-      console.error(`Search failed: ${term}`, error)
-      break
+      discovered.set(id, {
+        ...discovered.get(id),
+        ...game,
+      })
     }
+  } catch (error) {
+    console.error(`Roblox search failed: ${term}`, error)
+  }
+}
+
+async function loadSearches(
+  discovered: Map<number, any>
+) {
+  for (
+    let i = 0;
+    i < SEARCH_TERMS.length;
+    i += SEARCH_CONCURRENCY
+  ) {
+    const batch = SEARCH_TERMS.slice(
+      i,
+      i + SEARCH_CONCURRENCY
+    )
+
+    await Promise.all(
+      batch.map(term => searchRoblox(term, discovered))
+    )
   }
 }
 
@@ -295,7 +388,7 @@ export default async function handler(req: any, res: any) {
   try {
     const discovered = new Map<number, any>()
 
-    // 1. Add featured games
+    // 1. Nejdříve přidáme garantované známé hry.
     for (const [id, genre] of FEATURED_GAMES) {
       discovered.set(id, {
         universeId: id,
@@ -303,57 +396,10 @@ export default async function handler(req: any, res: any) {
       })
     }
 
-    // 2. Load Roblox Discover categories
-    try {
-      const sortsData = await getJson(
-        `${BASE}/get-sorts?sessionId=rblx-finder-session&device=computer&country=all`
-      )
+    // 2. Vyhledáme konkrétní známé hry.
+    await loadSearches(discovered)
 
-      const sorts = Array.isArray(sortsData.sorts)
-        ? sortsData.sorts
-        : []
-
-      const wanted = [
-        'top-playing-now',
-        'top-trending',
-        'up-and-coming',
-      ]
-
-      const selectedSorts = wanted
-        .map(id =>
-          sorts.find((sort: any) =>
-            sort.sortId === id || sort.token === id
-          )
-        )
-        .filter(Boolean)
-
-      for (const sort of selectedSorts) {
-        const sortId = sort.sortId || sort.token
-
-        try {
-          const content = await getJson(
-            `${BASE}/get-sort-content?sessionId=rblx-finder-session&sortId=${encodeURIComponent(sortId)}&device=computer&country=all&maxRows=100`
-          )
-
-          collectGames(content, discovered)
-        } catch (error) {
-          console.error(`Discover sort failed: ${sortId}`, error)
-        }
-      }
-    } catch (error) {
-      console.error('Roblox Discover failed:', error)
-    }
-
-    // 3. Search for additional games
-    for (let i = 0; i < SEARCH_TERMS.length; i += 5) {
-      const batch = SEARCH_TERMS.slice(i, i + 5)
-
-      await Promise.all(
-        batch.map(term => searchRoblox(term, discovered))
-      )
-    }
-
-    // 4. Prepare game IDs
+    // 3. Upřednostníme The Mimic a Piggy.
     const ids = [
       ...FEATURED_GAMES.keys(),
       ...[...discovered.keys()].filter(
@@ -365,74 +411,95 @@ export default async function handler(req: any, res: any) {
       throw new Error('Roblox did not return any games')
     }
 
-    // 5. Load game details
+    // 4. Načteme aktuální údaje o hrách.
     const details: any[] = []
 
     for (let i = 0; i < ids.length; i += 50) {
       const batch = ids.slice(i, i + 50)
 
-      const data = await getJson(
-        `${GAME_API}/games?universeIds=${batch.join(',')}`
-      )
+      try {
+        const data = await getJson(
+          `${GAME_API}/games?universeIds=${batch.join(',')}`
+        )
 
-      details.push(...(data.data ?? []))
+        details.push(...(data.data ?? []))
+      } catch (error) {
+        console.error('Game details failed:', error)
+        throw error
+      }
     }
 
-    // 6. Load game icons
+    if (!details.length) {
+      throw new Error('Roblox returned no game details')
+    }
+
+    // 5. Obrázky jsou nepovinné.
+    // Když jejich API nefunguje, samotné hry zůstanou dostupné.
     const iconData: any[] = []
 
     for (let i = 0; i < ids.length; i += 50) {
       const batch = ids.slice(i, i + 50)
 
-      const data = await getJson(
-        `${THUMBNAIL_API}/games/icons?universeIds=${batch.join(',')}&size=512x512&format=Png&isCircular=false`
-      )
+      try {
+        const data = await getJson(
+          `${THUMBNAIL_API}/games/icons?universeIds=${batch.join(',')}&size=512x512&format=Png&isCircular=false`
+        )
 
-      iconData.push(...(data.data ?? []))
+        iconData.push(...(data.data ?? []))
+      } catch (error) {
+        console.error('Game icons failed:', error)
+      }
     }
 
-    const icons = new Map(
+    const icons = new Map<number, string>(
       iconData.map((item: any) => [
         item.targetId,
         item.imageUrl,
       ])
     )
 
-    // 7. Filter and format games
+    // 6. Odstraníme nesouvisející hry a připravíme výstup.
     const games = details
-      .filter((game: any) =>
-        (game.playing ?? 0) >= MIN_PLAYERS ||
-        FEATURED_GAMES.has(game.id) ||
-        isKnownGame(game.name ?? '')
-      )
+      .filter((game: any) => {
+        const id = Number(game.id)
+        const name = String(game.name ?? '')
+
+        return (
+          FEATURED_GAMES.has(id) ||
+          isKnownGame(name)
+        )
+      })
       .map((game: any) => {
-        const discoveryInfo = discovered.get(game.id)
+        const id = Number(game.id)
+        const discoveryInfo = discovered.get(id)
+
+        const featuredGenre = FEATURED_GAMES.get(id)
 
         return {
-          id: game.id,
+          id,
           name: game.name,
-          description: game.description,
-          genres: normalizeGenres(
-            FEATURED_GAMES.get(game.id) ??
-            discoveryInfo?.genreL1 ??
-            discoveryInfo?.genre ??
-            game.genre,
-            game.name,
-            game.description
-          ),
-          players: game.playing ?? 0,
-          visits: game.visits ?? 0,
-          maxPlayers: game.maxPlayers ?? 0,
-          icon: icons.get(game.id) ?? null,
+          description: game.description ?? '',
+          genres: featuredGenre
+            ? [featuredGenre]
+            : normalizeGenres(
+                discoveryInfo?.genreL1 ??
+                discoveryInfo?.genre ??
+                game.genre,
+                game.name
+              ),
+          players: Number(game.playing ?? 0),
+          visits: Number(game.visits ?? 0),
+          maxPlayers: Number(game.maxPlayers ?? 0),
+          icon: icons.get(id) ?? null,
           url: `https://www.roblox.com/games/${game.rootPlaceId}`,
         }
       })
-
-    games.sort((a: any, b: any) => b.players - a.players)
+      .filter((game: any) => game.url.endsWith('/undefined') === false)
+      .sort((a: any, b: any) => b.players - a.players)
 
     res.setHeader(
       'Cache-Control',
-      's-maxage=120, stale-while-revalidate=300'
+      's-maxage=300, stale-while-revalidate=900'
     )
 
     return res.status(200).json({
@@ -454,3 +521,4 @@ export default async function handler(req: any, res: any) {
       details,
     })
   }
+}
