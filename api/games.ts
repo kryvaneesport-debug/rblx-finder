@@ -38,10 +38,9 @@ const KNOWN_GAME_NAMES = [
   'work at a pizza place',
   'meepcity',
   'royale high',
-  'dandy’s world',
-  'dandys world',
+  'dandy world',
   'untitled tag game',
-  ' flee the facility',
+  'flee the facility',
   'breaking point',
   'survive the killer',
   'rainbow friends 2',
@@ -59,11 +58,9 @@ const KNOWN_GAME_NAMES = [
   'emergency response',
   'livtopia',
   'twilight daycare',
-  'natural disaster survival',
   'super bomb survival',
   'epic minigames',
   'flood escape 2',
-  'flee the facility',
 ]
 
 const SEARCH_TERMS = [
@@ -140,20 +137,29 @@ function collectGames(
     for (const item of value) {
       collectGames(item, result)
     }
-  } else if (value && typeof value === 'object') {
-    const id = Number(value.universeId)
 
-    if (Number.isSafeInteger(id) && id > 0) {
-      result.set(id, {
-        ...result.get(id),
-        ...value,
-      })
-    }
+    return result
+  }
 
-    for (const child of Object.values(value)) {
-      if (child && typeof child === 'object') {
-        collectGames(child, result)
-      }
+  if (!value || typeof value !== 'object') {
+    return result
+  }
+
+  const possibleId = Number(value.universeId)
+
+  if (
+    Number.isSafeInteger(possibleId) &&
+    possibleId > 0
+  ) {
+    result.set(possibleId, {
+      ...result.get(possibleId),
+      ...value,
+    })
+  }
+
+  for (const child of Object.values(value)) {
+    if (child && typeof child === 'object') {
+      collectGames(child, result)
     }
   }
 
@@ -161,8 +167,10 @@ function collectGames(
 }
 
 function normalizeName(name: string) {
-  return name
+  return String(name ?? '')
     .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[’']/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
@@ -171,9 +179,14 @@ function normalizeName(name: string) {
 function isKnownGame(name: string) {
   const normalized = normalizeName(name)
 
-  return KNOWN_GAME_NAMES.some(
-    known => normalizeName(known) === normalized
-  )
+  return KNOWN_GAME_NAMES.some(known => {
+    const normalizedKnown = normalizeName(known)
+
+    return (
+      normalized === normalizedKnown ||
+      normalized.startsWith(normalizedKnown + ' ')
+    )
+  })
 }
 
 function normalizeGenres(
@@ -257,7 +270,7 @@ async function searchRoblox(
 
     try {
       const data = await getJson(
-        `${SEARCH_API}/omni-search?${params.toString()}`
+        `${SEARCH_API}?${params.toString()}`
       )
 
       collectGames(data, discovered)
@@ -282,7 +295,7 @@ export default async function handler(req: any, res: any) {
   try {
     const discovered = new Map<number, any>()
 
-    // 1. Add directly known games
+    // 1. Add featured games
     for (const [id, genre] of FEATURED_GAMES) {
       discovered.set(id, {
         universeId: id,
@@ -331,7 +344,7 @@ export default async function handler(req: any, res: any) {
       console.error('Roblox Discover failed:', error)
     }
 
-    // 3. Search for more games
+    // 3. Search for additional games
     for (let i = 0; i < SEARCH_TERMS.length; i += 5) {
       const batch = SEARCH_TERMS.slice(i, i + 5)
 
@@ -340,7 +353,7 @@ export default async function handler(req: any, res: any) {
       )
     }
 
-    // 4. Prioritize featured games
+    // 4. Prepare game IDs
     const ids = [
       ...FEATURED_GAMES.keys(),
       ...[...discovered.keys()].filter(
@@ -385,7 +398,7 @@ export default async function handler(req: any, res: any) {
       ])
     )
 
-    // 7. Keep popular games and known titles
+    // 7. Filter and format games
     const games = details
       .filter((game: any) =>
         (game.playing ?? 0) >= MIN_PLAYERS ||
