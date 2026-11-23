@@ -4,67 +4,53 @@ const GAME_API = 'https://games.roblox.com/v1'
 const THUMBNAIL_API = 'https://thumbnails.roblox.com/v1'
 
 const MAX_GAMES = 100
-const SEARCH_CONCURRENCY = 4
+const SEARCH_CONCURRENCY = 5
 const REQUEST_TIMEOUT = 7000
 
 const SEARCH_TERMS = [
-  'Piggy',
   'The Mimic',
+  'Piggy',
   'Doors',
   'Pressure',
+  'Apeirophobia',
   'Evade',
+  'Rainbow Friends',
   'Blox Fruits',
   'Brookhaven',
   'Rivals',
   'Adopt Me',
+  'Grow a Garden',
   'Murder Mystery 2',
-  'Rainbow Friends',
-  'Apeirophobia',
+  'Natural Disaster Survival',
+  'Arsenal',
+  'Blade Ball',
+  'Jailbreak',
+  'Tower of Hell',
+  'Dress to Impress',
+  'Fisch',
+  'Pet Simulator 99',
+  '3008',
+  'Work at a Pizza Place',
+  'MeepCity',
+  'Royale High',
+  'Dandy’s World',
+  'Flee the Facility',
+  'Breaking Point',
+  'Survive the Killer',
+  'The Strongest Battlegrounds',
+  'Shindo Life',
+  'King Legacy',
+  'Anime Adventures',
+  'BedWars',
+  'Islands',
+  'Build a Boat for Treasure',
+  'Bee Swarm Simulator',
+  'Vehicle Legends',
+  'Epic Minigames',
+  'Flood Escape 2',
 ]
 
-const KNOWN_GAME_NAMES = [
-  'the mimic',
-  'piggy',
-  'doors',
-  'pressure',
-  'apeirophobia',
-  'evade',
-  'rainbow friends',
-  'blox fruits',
-  'brookhaven',
-  'rivals',
-  'adopt me',
-  'grow a garden',
-  'murder mystery 2',
-  'natural disaster survival',
-  'arsenal',
-  'blade ball',
-  'jailbreak',
-  'tower of hell',
-  'dress to impress',
-  'fisch',
-  'pet simulator',
-  'pet simulator 99',
-  '3008',
-  'work at a pizza place',
-  'meepcity',
-  'royale high',
-  'dandy world',
-  'flee the facility',
-  'breaking point',
-  'survive the killer',
-  'the strongest battlegrounds',
-  'shindo life',
-  'king legacy',
-  'anime adventures',
-  'bedwars',
-  'islands',
-  'build a boat for treasure',
-  'bee swarm simulator',
-  'vehicle legends',
-  'epic minigames',
-  'flood escape 2',
-]
+const KNOWN_GAME_NAMES = SEARCH_TERMS.map(normalizeName)
 
 function normalizeName(name: string) {
   return String(name ?? '')
@@ -77,26 +63,11 @@ function normalizeName(name: string) {
 }
 
 function isKnownGame(name: string) {
-  const normalized = normalizeName(name)
-
-  return KNOWN_GAME_NAMES.some(known => {
-    const expected = normalizeName(known)
-
-    return (
-      normalized === expected ||
-      normalized.startsWith(expected + ' ')
-    )
-  })
+  return KNOWN_GAME_NAMES.includes(normalizeName(name))
 }
 
-function matchesSearchResult(name: string, term: string) {
-  const normalizedName = normalizeName(name)
-  const normalizedTerm = normalizeName(term)
-
-  return (
-    normalizedName === normalizedTerm ||
-    normalizedName.startsWith(normalizedTerm + ' ')
-  )
+function delay(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 async function getJson(url: string, retries = 1): Promise<any> {
@@ -104,6 +75,7 @@ async function getJson(url: string, retries = 1): Promise<any> {
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController()
+
     const timeout = setTimeout(
       () => controller.abort(),
       REQUEST_TIMEOUT
@@ -131,7 +103,7 @@ async function getJson(url: string, retries = 1): Promise<any> {
         : new Error(String(error))
 
       if (attempt < retries) {
-        await new Promise(resolve => setTimeout(resolve, 500))
+        await delay(500)
       }
     } finally {
       clearTimeout(timeout)
@@ -247,11 +219,12 @@ async function searchRoblox(term: string) {
         game.name ?? game.universeName ?? ''
       )
 
-      if (!matchesSearchResult(name, term)) {
+      // Přijímáme pouze originální název hry.
+      if (!isKnownGame(name)) {
         continue
       }
 
-      if (!isKnownGame(name)) {
+      if (normalizeName(name) !== normalizeName(term)) {
         continue
       }
 
@@ -300,8 +273,9 @@ async function loadSearches() {
 
 function formatGame(game: any, icon: string | null = null) {
   const id = Number(game.id ?? game.universeId)
+
   const name = String(
-    game.name ?? game.universeName ?? 'Unknown Roblox game'
+    game.name ?? game.universeName ?? ''
   )
 
   const rootPlaceId = Number(
@@ -348,12 +322,12 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    // 1. Vyhledáme pouze konkrétní známé hry.
+    // 1. Vyhledáme celý seznam známých her.
     const discovered = await loadSearches()
 
     if (discovered.size === 0) {
       throw new Error(
-        'Roblox search returned no games. Please try again later.'
+        'Roblox search returned no known games.'
       )
     }
 
@@ -362,12 +336,12 @@ export default async function handler(req: any, res: any) {
       MAX_GAMES
     )
 
-    // 2. Zkusíme načíst aktuální herní statistiky.
-    let details: any[] = []
-
     const ids = candidates
       .map(game => Number(game.universeId))
       .filter(id => Number.isSafeInteger(id) && id > 0)
+
+    // 2. Načteme statistiky.
+    const details: any[] = []
 
     for (let i = 0; i < ids.length; i += 50) {
       const batch = ids.slice(i, i + 50)
@@ -385,8 +359,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    // 3. Když Roblox nepovolí načtení detailů,
-    // použijeme dostupné výsledky vyhledávání.
+    // 3. Spojíme výsledky vyhledávání a statistiky.
     const detailMap = new Map<number, any>()
 
     for (const game of details) {
@@ -398,7 +371,7 @@ export default async function handler(req: any, res: any) {
       ...(detailMap.get(Number(candidate.universeId)) ?? {}),
     }))
 
-    // 4. Načteme obrázky. Jejich výpadek nezastaví aplikaci.
+    // 4. Načteme obrázky.
     const iconMap = new Map<number, string>()
 
     for (let i = 0; i < ids.length; i += 50) {
@@ -423,7 +396,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    // 5. Finální seznam her.
+    // 5. Odstraníme kopie a seřadíme hry.
     const games = mergedGames
       .filter(game => {
         const name = String(
