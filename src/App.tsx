@@ -5,7 +5,7 @@ type Game = {
   id: number
   name: string
   description: string
-  genre: string
+  genres: string[]
   players: number
   visits: number
   maxPlayers: number
@@ -14,12 +14,18 @@ type Game = {
 }
 
 const categories = [
-  'All Games',
-  'Horror',
-  'Simulator',
-  'Fighting',
-  'Roleplay',
-  'Obby',
+  { name: 'All Games', icon: '🎮' },
+  { name: 'Horror', icon: '👻' },
+  { name: 'Simulator', icon: '🌍' },
+  { name: 'Fighting', icon: '⚔️' },
+  { name: 'Roleplay', icon: '🏡' },
+  { name: 'Obby', icon: '🏃' },
+  { name: 'Survival', icon: '🧟' },
+  { name: 'Anime', icon: '⚡' },
+  { name: 'Racing', icon: '🏎️' },
+  { name: 'Sports', icon: '⚽' },
+  { name: 'Adventure', icon: '🗺️' },
+  { name: 'Other', icon: '🎲' },
 ]
 
 function App() {
@@ -36,14 +42,18 @@ function App() {
         if (!response.ok) throw new Error('Failed to load games')
         return response.json()
       })
-      .then(data => setGames(data.games))
+      .then(data => setGames(data.games ?? []))
       .catch(() => setError('Could not load Roblox games. Please try again later.'))
       .finally(() => setLoading(false))
   }, [])
 
   const filteredGames = games
-    .filter(game => category === 'All Games' || game.genre === category)
-    .filter(game => game.name.toLowerCase().includes(search.toLowerCase()))
+    .filter(game =>
+      category === 'All Games' || game.genres?.includes(category)
+    )
+    .filter(game =>
+      game.name.toLowerCase().includes(search.toLowerCase())
+    )
     .sort((a, b) =>
       sort === 'players'
         ? b.players - a.players
@@ -58,16 +68,12 @@ function App() {
 
         {categories.map(item => (
           <button
-            key={item}
-            className={`nav-item ${category === item ? 'active' : ''}`}
-            onClick={() => setCategory(item)}
+            key={item.name}
+            className={`nav-item ${category === item.name ? 'active' : ''}`}
+            onClick={() => setCategory(item.name)}
           >
-            {item === 'All Games' ? '🎮' :
-             item === 'Horror' ? '👻' :
-             item === 'Simulator' ? '🌍' :
-             item === 'Fighting' ? '⚔️' :
-             item === 'Roleplay' ? '🏡' : '🏃'}
-            <span>{item}</span>
+            {item.icon}
+            <span>{item.name}</span>
           </button>
         ))}
 
@@ -102,8 +108,16 @@ function App() {
           <div className="section-heading">
             <div>
               <div className="hero-tag">EXPLORE THE UNIVERSE</div>
-              <h2>{category === 'All Games' ? 'Discover games' : category + ' games'}</h2>
-              <p>{loading ? 'Loading games...' : `${filteredGames.length} games found`}</p>
+              <h2>
+                {category === 'All Games'
+                  ? 'Discover games'
+                  : category + ' games'}
+              </h2>
+              <p>
+                {loading
+                  ? 'Loading games...'
+                  : `${filteredGames.length} games found`}
+              </p>
             </div>
 
             <div className="sort-control">
@@ -153,7 +167,9 @@ function App() {
                       <div className="game-title-row">
                         <h3>{game.name}</h3>
                       </div>
-                      <p>{game.genre}</p>
+
+                      <p>{game.genres?.join(' • ') || 'Other'}</p>
+
                       <div className="game-stats">
                         <span>♟ {game.players.toLocaleString('en-US')} playing</span>
                         <span className="playing">● LIVE</span>
