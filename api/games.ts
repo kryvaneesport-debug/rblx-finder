@@ -443,10 +443,14 @@ export default async function handler(req: any, res: any) {
       games,
     })
   } catch (error) {
+    const details = error instanceof Error
+      ? error.message
+      : String(error)
+
     console.error('RBLX FINDER:', error)
 
     return res.status(500).json({
       error: 'Could not load Roblox games.',
+      details,
     })
   }
-}
