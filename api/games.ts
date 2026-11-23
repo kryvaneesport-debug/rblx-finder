@@ -4,15 +4,108 @@ const SEARCH_API = 'https://apis.roblox.com/search-api/omni-search'
 const GAME_API = 'https://games.roblox.com/v1'
 const THUMBNAIL_API = 'https://thumbnails.roblox.com/v1'
 
+const MAX_GAMES = 500
+const MIN_PLAYERS = 500
+
 const FEATURED_GAMES = new Map<number, string>([
   [2294168059, 'Horror'], // The Mimic
 ])
+
+const KNOWN_GAME_NAMES = [
+  'the mimic',
+  'doors',
+  'pressure',
+  'apeirophobia',
+  'piggy',
+  'evade',
+  'rainbow friends',
+  'blox fruits',
+  'brookhaven',
+  'rivals',
+  'adopt me',
+  'grow a garden',
+  'murder mystery 2',
+  'natural disaster survival',
+  'arsenal',
+  'blade ball',
+  'jailbreak',
+  'tower of hell',
+  'dress to impress',
+  'fisch',
+  'pet simulator',
+  'pet simulator 99',
+  '3008',
+  'work at a pizza place',
+  'meepcity',
+  'royale high',
+  'dandy’s world',
+  'dandys world',
+  'untitled tag game',
+  ' flee the facility',
+  'breaking point',
+  'survive the killer',
+  'rainbow friends 2',
+  'the strongest battlegrounds',
+  'shindo life',
+  'king legacy',
+  'anime adventures',
+  'anime defenders',
+  'bedwars',
+  'islands',
+  'build a boat for treasure',
+  'bee swarm simulator',
+  'pet catchers',
+  'vehicle legends',
+  'emergency response',
+  'livtopia',
+  'twilight daycare',
+  'natural disaster survival',
+  'super bomb survival',
+  'epic minigames',
+  'flood escape 2',
+  'flee the facility',
+]
 
 const SEARCH_TERMS = [
   'The Mimic',
   'Doors',
   'Pressure',
   'Apeirophobia',
+  'Piggy',
+  'Evade',
+  'Rainbow Friends',
+  'Blox Fruits',
+  'Brookhaven',
+  'Rivals',
+  'Adopt Me',
+  'Grow a Garden',
+  'Murder Mystery 2',
+  'Natural Disaster Survival',
+  'Arsenal',
+  'Blade Ball',
+  'Jailbreak',
+  'Tower of Hell',
+  'Dress to Impress',
+  'Fisch',
+  'Pet Simulator 99',
+  '3008',
+  'Work at a Pizza Place',
+  'MeepCity',
+  'Royale High',
+  'Dandy’s World',
+  'Breaking Point',
+  'Survive the Killer',
+  'The Strongest Battlegrounds',
+  'Shindo Life',
+  'King Legacy',
+  'Anime Adventures',
+  'BedWars',
+  'Islands',
+  'Build a Boat for Treasure',
+  'Bee Swarm Simulator',
+  'Vehicle Legends',
+  'Epic Minigames',
+  'Flood Escape 2',
   'horror games',
   'survival games',
   'anime games',
@@ -21,13 +114,15 @@ const SEARCH_TERMS = [
   'obby games',
   'racing games',
   'adventure games',
-  'popular Roblox games',
   'fighting games',
+  'popular Roblox games',
 ]
 
 async function getJson(url: string) {
   const response = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 RBLX-FINDER' },
+    headers: {
+      'User-Agent': 'Mozilla/5.0 RBLX-FINDER',
+    },
   })
 
   if (!response.ok) {
@@ -37,14 +132,22 @@ async function getJson(url: string) {
   return response.json()
 }
 
-function collectGames(value: any, result = new Map<number, any>()) {
+function collectGames(
+  value: any,
+  result = new Map<number, any>()
+) {
   if (Array.isArray(value)) {
-    for (const item of value) collectGames(item, result)
+    for (const item of value) {
+      collectGames(item, result)
+    }
   } else if (value && typeof value === 'object') {
     const id = Number(value.universeId)
 
     if (Number.isSafeInteger(id) && id > 0) {
-      result.set(id, { ...result.get(id), ...value })
+      result.set(id, {
+        ...result.get(id),
+        ...value,
+      })
     }
 
     for (const child of Object.values(value)) {
@@ -57,7 +160,27 @@ function collectGames(value: any, result = new Map<number, any>()) {
   return result
 }
 
-function normalizeGenres(value: any, name = '', description = '') {
+function normalizeName(name: string) {
+  return name
+    .toLowerCase()
+    .replace(/[’']/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function isKnownGame(name: string) {
+  const normalized = normalizeName(name)
+
+  return KNOWN_GAME_NAMES.some(
+    known => normalizeName(known) === normalized
+  )
+}
+
+function normalizeGenres(
+  value: any,
+  name = '',
+  description = ''
+) {
   const genre = String(value ?? '').toLowerCase()
   const text = `${name} ${description}`.toLowerCase()
   const genres: string[] = []
@@ -66,23 +189,23 @@ function normalizeGenres(value: any, name = '', description = '') {
 
   if (
     genre.includes('horror') ||
-    matches(/\b(horror|scary|terror|haunted|nightmare|creepy|mimic|doors|pressure|apeirophobia)\b/)
+    matches(/\b(horror|scary|terror|haunted|nightmare|creepy|mimic|doors|pressure|apeirophobia|piggy|rainbow friends)\b/)
   ) genres.push('Horror')
 
   if (
     genre.includes('simulat') ||
-    matches(/\b(simulator|tycoon|pet sim|farming|restaurant|business sim)\b/)
+    matches(/\b(simulator|tycoon|pet sim|farming|restaurant|business sim|bee swarm|grow a garden)\b/)
   ) genres.push('Simulator')
 
   if (
     genre.includes('fight') ||
     genre.includes('action') ||
-    matches(/\b(fighting|battle|combat|pvp|war|shooter|fps|arena|boxing)\b/)
+    matches(/\b(fighting|battle|combat|pvp|war|shooter|fps|arena|boxing|rivals|arsenal|blade ball)\b/)
   ) genres.push('Fighting')
 
   if (
     genre.includes('roleplay') ||
-    matches(/\b(roleplay|role play|brookhaven|adopt me|bloxburg)\b/)
+    matches(/\b(roleplay|role play|brookhaven|adopt me|bloxburg|meepcity|royale high)\b/)
   ) genres.push('Roleplay')
 
   if (
@@ -91,26 +214,28 @@ function normalizeGenres(value: any, name = '', description = '') {
   ) genres.push('Obby')
 
   if (
-    matches(/\b(survival|survive|zombie|apocalypse|disaster|last alive)\b/)
+    matches(/\b(survival|survive|zombie|apocalypse|disaster|last alive|3008)\b/)
   ) genres.push('Survival')
 
   if (
-    matches(/\b(anime|naruto|one piece|dragon ball|bleach|jujutsu|demon slayer)\b/)
+    matches(/\b(anime|naruto|one piece|dragon ball|bleach|jujutsu|demon slayer|shindo life)\b/)
   ) genres.push('Anime')
 
   if (
-    matches(/\b(racing|race|driving|car simulator|drift|speedway)\b/)
+    matches(/\b(racing|race|driving|car simulator|drift|speedway|vehicle legends)\b/)
   ) genres.push('Racing')
 
   if (
-    matches(/\b(sports|football|soccer|basketball|volleyball|tennis)\b/)
+    matches(/\b(sports|football|soccer|basketball|volleyball|tennis|bedwars)\b/)
   ) genres.push('Sports')
 
   if (
     matches(/\b(adventure|quest|explore|dungeon|open world)\b/)
   ) genres.push('Adventure')
 
-  return genres.length > 0 ? [...new Set(genres)] : ['Other']
+  return genres.length > 0
+    ? [...new Set(genres)]
+    : ['Other']
 }
 
 async function searchRoblox(
@@ -119,7 +244,6 @@ async function searchRoblox(
 ) {
   let pageToken = ''
 
-  // Maximum two pages for each search term
   for (let page = 0; page < 2; page++) {
     const params = new URLSearchParams({
       searchQuery: term,
@@ -150,13 +274,15 @@ async function searchRoblox(
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' })
+    return res.status(405).json({
+      error: 'Method not allowed',
+    })
   }
 
   try {
     const discovered = new Map<number, any>()
 
-    // 1. Add selected known games directly
+    // 1. Add directly known games
     for (const [id, genre] of FEATURED_GAMES) {
       discovered.set(id, {
         universeId: id,
@@ -165,50 +291,62 @@ export default async function handler(req: any, res: any) {
     }
 
     // 2. Load Roblox Discover categories
-    const sortsData = await getJson(
-      `${BASE}/get-sorts?sessionId=rblx-finder-session&device=computer&country=all`
-    )
+    try {
+      const sortsData = await getJson(
+        `${BASE}/get-sorts?sessionId=rblx-finder-session&device=computer&country=all`
+      )
 
-    const sorts = Array.isArray(sortsData.sorts)
-      ? sortsData.sorts
-      : []
+      const sorts = Array.isArray(sortsData.sorts)
+        ? sortsData.sorts
+        : []
 
-    const wanted = [
-      'top-playing-now',
-      'top-trending',
-      'up-and-coming',
-    ]
+      const wanted = [
+        'top-playing-now',
+        'top-trending',
+        'up-and-coming',
+      ]
 
-    const selectedSorts = wanted
-      .map(id =>
-        sorts.find((sort: any) =>
-          sort.sortId === id || sort.token === id
+      const selectedSorts = wanted
+        .map(id =>
+          sorts.find((sort: any) =>
+            sort.sortId === id || sort.token === id
+          )
         )
-      )
-      .filter(Boolean)
+        .filter(Boolean)
 
-    for (const sort of selectedSorts) {
-      const sortId = sort.sortId || sort.token
+      for (const sort of selectedSorts) {
+        const sortId = sort.sortId || sort.token
 
-      const content = await getJson(
-        `${BASE}/get-sort-content?sessionId=rblx-finder-session&sortId=${encodeURIComponent(sortId)}&device=computer&country=all&maxRows=100`
-      )
+        try {
+          const content = await getJson(
+            `${BASE}/get-sort-content?sessionId=rblx-finder-session&sortId=${encodeURIComponent(sortId)}&device=computer&country=all&maxRows=100`
+          )
 
-      collectGames(content, discovered)
+          collectGames(content, discovered)
+        } catch (error) {
+          console.error(`Discover sort failed: ${sortId}`, error)
+        }
+      }
+    } catch (error) {
+      console.error('Roblox Discover failed:', error)
     }
 
-    // 3. Search for additional games
-    // Four searches at a time to avoid excessive requests
-    for (let i = 0; i < SEARCH_TERMS.length; i += 4) {
-      const batch = SEARCH_TERMS.slice(i, i + 4)
+    // 3. Search for more games
+    for (let i = 0; i < SEARCH_TERMS.length; i += 5) {
+      const batch = SEARCH_TERMS.slice(i, i + 5)
 
       await Promise.all(
         batch.map(term => searchRoblox(term, discovered))
       )
     }
 
-    // 4. Load up to 300 unique games
-    const ids = [...discovered.keys()].slice(0, 300)
+    // 4. Prioritize featured games
+    const ids = [
+      ...FEATURED_GAMES.keys(),
+      ...[...discovered.keys()].filter(
+        id => !FEATURED_GAMES.has(id)
+      ),
+    ].slice(0, MAX_GAMES)
 
     if (!ids.length) {
       throw new Error('Roblox did not return any games')
@@ -247,11 +385,12 @@ export default async function handler(req: any, res: any) {
       ])
     )
 
-    // 7. Prepare games and apply player threshold
+    // 7. Keep popular games and known titles
     const games = details
       .filter((game: any) =>
-        (game.playing ?? 0) >= 500 ||
-        FEATURED_GAMES.has(game.id)
+        (game.playing ?? 0) >= MIN_PLAYERS ||
+        FEATURED_GAMES.has(game.id) ||
+        isKnownGame(game.name ?? '')
       )
       .map((game: any) => {
         const discoveryInfo = discovered.get(game.id)
@@ -261,6 +400,7 @@ export default async function handler(req: any, res: any) {
           name: game.name,
           description: game.description,
           genres: normalizeGenres(
+            FEATURED_GAMES.get(game.id) ??
             discoveryInfo?.genreL1 ??
             discoveryInfo?.genre ??
             game.genre,
@@ -284,7 +424,9 @@ export default async function handler(req: any, res: any) {
 
     return res.status(200).json({
       total: games.length,
-      minimumPlayers: 500,
+      minimumPlayers: MIN_PLAYERS,
+      maximumGames: MAX_GAMES,
+      knownGamesIncluded: true,
       games,
     })
   } catch (error) {
