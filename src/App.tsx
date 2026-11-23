@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 type Game = {
   id: number
@@ -35,30 +35,76 @@ function App() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [totalGames, setTotalGames] = useState(0)
 
   useEffect(() => {
+    let active = true
+
     fetch('/api/games')
-      .then(response => {
-        if (!response.ok) throw new Error('Failed to load games')
-        return response.json()
+      .then(async response => {
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(
+            data.details || data.error || 'Failed to load games.'
+          )
+        }
+
+        return data
       })
-      .then(data => setGames(data.games ?? []))
-      .catch(() => setError('Could not load Roblox games. Please try again later.'))
-      .finally(() => setLoading(false))
+      .then(data => {
+        if (!active) return
+
+        const validGames = (Array.isArray(data.games) ? data.games : [])
+          .filter((game: any) =>
+            Number.isSafeInteger(Number(game.id)) &&
+            Number(game.id) > 0 &&
+            typeof game.name === 'string' &&
+            game.name.trim().length > 0
+          )
+          .map((game: any) => ({
+            ...game,
+            id: Number(game.id),
+            players: Number(game.players) || 0,
+            visits: Number(game.visits) || 0,
+            genres: Array.isArray(game.genres) ? game.genres : ['Other'],
+          }))
+
+        setGames(validGames)
+        setTotalGames(Number(data.total) || validGames.length)
+      })
+      .catch(error => {
+        if (!active) return
+
+        console.error('RBLX FINDER:', error)
+        setError(
+          'Could not load Roblox games. Please try again later.'
+        )
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
   }, [])
 
-  const filteredGames = games
-    .filter(game =>
-      category === 'All Games' || game.genres?.includes(category)
-    )
-    .filter(game =>
-      game.name.toLowerCase().includes(search.toLowerCase())
-    )
-    .sort((a, b) =>
-      sort === 'players'
-        ? b.players - a.players
-        : b.visits - a.visits
-    )
+  const filteredGames = useMemo(() => {
+    return games
+      .filter(game =>
+        category === 'All Games' ||
+        game.genres.includes(category)
+      )
+      .filter(game =>
+        game.name.toLowerCase().includes(search.trim().toLowerCase())
+      )
+      .sort((a, b) =>
+        sort === 'players'
+          ? b.players - a.players
+          : b.visits - a.visits
+      )
+  }, [games, category, search, sort])
 
   return (
     <div className="app">
@@ -91,7 +137,9 @@ function App() {
         <section className="hero">
           <div className="hero-tag">YOUR NEXT ADVENTURE STARTS HERE</div>
           <h1>Find your next<br /><span>favorite game.</span></h1>
-          <p>Explore Roblox games, discover new experiences and find what's popular.</p>
+          <p>
+            Explore Roblox games, discover new experiences and find what's popular.
+          </p>
 
           <div className="search-box">
             <span>⌕</span>
@@ -111,12 +159,12 @@ function App() {
               <h2>
                 {category === 'All Games'
                   ? 'Discover games'
-                  : category + ' games'}
+                  : `${category} games`}
               </h2>
               <p>
                 {loading
                   ? 'Loading games...'
-                  : `${filteredGames.length} games found`}
+                  : `${filteredGames.length} of ${totalGames} games found`}
               </p>
             </div>
 
@@ -133,9 +181,13 @@ function App() {
             </div>
           </div>
 
-          {loading && <div className="empty">Loading Roblox games...</div>}
+          {loading && (
+            <div className="empty">Loading Roblox games...</div>
+          )}
 
-          {error && <div className="empty">{error}</div>}
+          {error && (
+            <div className="empty">{error}</div>
+          )}
 
           {!loading && !error && (
             <>
@@ -147,7 +199,10 @@ function App() {
                     href={game.url}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ textDecoration: 'none', color: 'inherit' }}
+                    style={{
+                      textDecoration: 'none',
+                      color: 'inherit',
+                    }}
                   >
                     <div
                       className="game-art"
@@ -168,11 +223,19 @@ function App() {
                         <h3>{game.name}</h3>
                       </div>
 
-                      <p>{game.genres?.join(' • ') || 'Other'}</p>
+                      <p>{game.genres.join(' • ')}</p>
 
                       <div className="game-stats">
-                        <span>♟ {game.players.toLocaleString('en-US')} playing</span>
+                        <span>
+                          ♟ {game.players.toLocaleString('en-US')} playing
+                        </span>
                         <span className="playing">● LIVE</span>
+                      </div>
+
+                      <div className="game-stats">
+                        <span>
+                          ◉ {game.visits.toLocaleString('en-US')} visits
+                        </span>
                       </div>
                     </div>
                   </a>
@@ -180,13 +243,15 @@ function App() {
               </div>
 
               {filteredGames.length === 0 && (
-                <div className="empty">No games found. Try another search.</div>
+                <div className="empty">
+                  No games found. Try another search.
+                </div>
               )}
             </>
           )}
 
           <p className="demo-note">
-            Player counts and visits are provided by Roblox. Data may be delayed.
+            Showing {games.length} loaded games. Player counts and visits are provided by Roblox and may be delayed.
           </p>
         </section>
       </main>
